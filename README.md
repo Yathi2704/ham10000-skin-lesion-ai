@@ -1,83 +1,99 @@
-# Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions
+# Explainable AI for Actinic Keratosis and Malignant Skin Lesion Classification
 
-**EADV 2026 · ePoster P2699 · 35th European Academy of Dermatology & Venereology Congress, Vienna**
+Code and results behind **e-poster P2699**, *"Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions using a Deep Learning Approach"* — EADV Congress 2026, Vienna.
 
-Fellisha Marwein and Yathish Balachander
-NIHR Clinical Research Facility, Liverpool University Hospitals NHS Foundation Trust, Liverpool, UK
+Fellisha Marwein and Yathish Balachander · NIHR Clinical Research Facility, Liverpool University Hospitals NHS Foundation Trust.
+
+**This is a teaching-scale proof of concept, not a diagnostic tool.** It is trained on 700 images from one public dataset, has no external validation, and is not fit for any clinical use.
 
 ---
 
-## Overview
+## Corrections — 17 September 2026
 
-Most AI research in skin cancer targets melanoma using opaque "black-box" models, leaving UV-associated premalignant lesions such as actinic keratosis (AK) underexplored — despite ~65% of cutaneous squamous cell carcinomas arising within previously diagnosed AKs.
+Two claims in the first version of this repository were not supported by the notebook and have been fixed. They are recorded here rather than quietly removed.
 
-This repository contains the complete, reproducible pipeline behind our ePoster: three classical machine-learning models (Random Forest, SVM, XGBoost) benchmarked against an **EfficientNet-B0 CNN with Grad-CAM explainability**, for 7-class classification of UV-associated premalignant and malignant skin lesions on a curated subset of HAM10000.
+| Claim in v1 | What the notebook actually showed | Fix |
+|---|---|---|
+| "Stratified 80:20 split … 20 test images per class" | Only the classical models used a stratified split. The CNN used the Hugging Face splitter, which is not stratified: its test set had 21/24/20/16/23/19/17 images per class, and shared just 35 of 140 images with the classical models' test set. | `Actinic_keratosis_gradcam_fixed.ipynb` puts all four models on one stratified split. CNN metrics are being re-measured. |
+| "Grad-CAM attention consistently localised to the lesion" | The Grad-CAM cell failed with `ModuleNotFoundError: pytorch_grad_cam` — the package is published as `grad-cam` — so no heatmap was ever produced. | The install is fixed and the notebook now saves a Grad-CAM panel. No localisation claim is made here until that panel has been produced and counted. |
+
+---
+
+## Data
+
+- **Source:** [`pranay-43/HAM10000`](https://huggingface.co/datasets/pranay-43/HAM10000) on Hugging Face — a 700-image balanced subset of HAM10000 (Tschandl, Rosendahl & Kittler, *Scientific Data*, 2018).
+- **Classes (7):** `akiec` (actinic keratosis / intraepithelial carcinoma), `bcc`, `bkl`, `df`, `mel`, `nv`, `vasc` — 100 images each.
+- **Split:** stratified 80:20, `random_state=42` → 560 training / 140 test, 20 test images per class, identical for all four models.
+
+**Known weakness:** HAM10000 contains multiple photographs of some lesions (its `lesion_id` column). This subset is split by image, not by lesion, so images of one lesion can fall on both sides of the split. Treat the reported scores as an upper bound. The full-dataset retrain groups by `lesion_id`.
+
+## Method
+
+| Model | Input | Configuration |
+|---|---|---|
+| Random Forest | 64×64 RGB flattened (12,288 features) | 200 trees |
+| SVM | same | RBF kernel |
+| XGBoost | same | `multi:softmax`, 7 classes |
+| EfficientNet-B0 | 224×224 RGB | ImageNet-pretrained, fine-tuned end to end, 5 epochs, Adam `lr=1e-4`, batch 16 |
+
+Explainability: Grad-CAM over the final convolutional block (`model.features[-1]`), explaining the predicted class.
 
 ## Results
 
+Classical baselines, on the stratified 140-image test set:
+
 | Model | Accuracy | Precision | Recall | F1 |
 |---|---|---|---|---|
-| **EfficientNet-B0 (CNN)** | **0.700** | **0.720** | **0.700** | **0.710** |
 | Random Forest | 0.493 | 0.493 | 0.493 | 0.489 |
 | XGBoost | 0.471 | 0.478 | 0.471 | 0.471 |
 | SVM | 0.450 | 0.451 | 0.450 | 0.443 |
+| EfficientNet-B0 | _re-running_ | _re-running_ | _re-running_ | _re-running_ |
 
-*700 images, 7 classes (100 per class), stratified 80:20 train–test split (seed 42), 140-image test set (20 per class). CNN trained 5 epochs, transfer learning from ImageNet.*
+Precision and recall are weighted averages, taken from the notebook's `classification_report` output.
 
-**Key findings**
+The first submitted run of EfficientNet-B0 scored 0.700 accuracy (0.72 / 0.70 / 0.71 weighted precision / recall / F1) — but on the unstratified test set described above, so it is not directly comparable with the classical rows. It is being re-measured on the shared split and this table will be updated with that result.
 
-- The CNN outperformed all classical models by ~20 percentage points — learned hierarchical features beat flattened pixel vectors (64×64×3 = 12,288 features).
-- The dominant confusion is **AK ↔ basal cell carcinoma**, consistent with their shared dermoscopic morphology.
-- **Grad-CAM** attention consistently localised to the lesion rather than background skin — supporting interpretability and clinical auditability.
+### Explainability
 
-## Pipeline
+Grad-CAM did not run in the originally published notebook. `Actinic_keratosis_gradcam_fixed.ipynb` fixes the install and produces:
 
-1. Load HAM10000 subset from Hugging Face (700 images, 7 classes)
-2. Resize 224×224, tensor transform, custom PyTorch `Dataset`, 80:20 split, batches of 16
-3. EfficientNet-B0 (ImageNet-pretrained), final layer replaced with 7 outputs; CrossEntropyLoss + Adam (lr 1e-4), 5 epochs
-4. Evaluation: accuracy, per-class precision/recall/F1, confusion matrix
-5. Classical ML: images resized 64×64, flattened to 12,288 features; Random Forest / SVM (rbf) / XGBoost
-6. Grad-CAM on the final feature layer; heatmap overlaid on the original image
-7. Model comparison tables, radar/bar/heatmap plots, results saved to CSV
+- `gradcam_single.png` — one test image, original and heatmap;
+- `gradcam_panel.png` — the first two test images of every class, chosen by position rather than by appearance, so failure cases appear alongside successes;
+- `gradcam_panel_predictions.csv` — the prediction, confidence and correctness behind each panel image.
 
-## Running it
+Findings will be added here once the panel has been produced and reviewed.
 
-Open `Actinic_keratosis.ipynb` in Google Colab (free GPU is sufficient; full run ≈ 15 min):
+## Reproducing
 
-```bash
-pip install datasets transformers timm pytorch-grad-cam xgboost
-# if pytorch-grad-cam fails to resolve, use: pip install grad-cam
-```
+1. Open `Actinic_keratosis_gradcam_fixed.ipynb` in Google Colab.
+2. Runtime → Change runtime type → **T4 GPU**.
+3. Run cells 1 and 2 (about 5–10 minutes). Cell 1 downloads the data, trains all four models and evaluates them; cell 2 produces the Grad-CAM panel.
 
-Then run the cells top to bottom. No other setup needed — the dataset downloads automatically from Hugging Face (`pranay-43/HAM10000`).
+The notebook sets seeds (42) and saves the trained weights as `efficientnet_b0_ham700_seed42.pt`, so the heatmaps can be traced to a specific model. `Actinic_keratosis.ipynb` is the original submitted notebook, kept unchanged for provenance.
 
-## Repository contents
+## Limitations
 
-| File | Description |
-|---|---|
-| `Actinic_keratosis.ipynb` | Full pipeline (outputs cleared for size; run top-to-bottom in Colab) |
+- 700 images from a single public dataset; no external validation.
+- No per-image histopathological confirmation for this subset (HAM10000 overall reports more than half of its lesions as histopathology-confirmed).
+- Split by image rather than by lesion — see above.
+- The balanced test set makes the four-model comparison fair and the accuracy optimistic; it is not clinic prevalence.
+- HAM10000 is central European dermoscopy and barely represents Fitzpatrick V–VI skin. Nothing here supports any claim about performance in darker skin.
+- Classical baselines use raw flattened pixels deliberately, as a floor rather than a tuned competitor.
+- Grad-CAM is qualitative. No pointing-game, deletion/insertion or reader-study validation has been done.
 
-## Limitations (stated on the poster)
+## Next steps
 
-Small single-source dataset (700 images), class-balance of the curated subset, no per-image histopathological confirmation, no clinical metadata, no external validation, 70% accuracy is not clinical grade. This is a proof of concept for **triage/decision support research**, not a diagnostic device.
+1. Full HAM10000 (10,015 images) with lesion-level grouping, class weighting and augmentation.
+2. Balanced accuracy and macro F1 as the headline metrics on the natural class distribution.
+3. Evaluation on phototype-labelled data (Fitzpatrick17k, DDI) and smartphone images (PAD-UFES-20).
+4. Quantitative validation of the explanations against lesion masks.
 
-## Roadmap
+## Citation
 
-- [ ] Retrain on full HAM10000 (10,015 images) with class-weighted loss + augmentation
-- [ ] Add ISIC 2019 / BCN20000 / PAD-UFES-20 (smartphone images)
-- [ ] External multi-centre, phototype-diverse validation (Fitzpatrick17k, DDI)
-- [ ] Vision transformer & foundation model benchmarks
-- [ ] Quantitative interpretability (pointing-game / deletion metrics) + reader study
-- [ ] Low-cost Raspberry Pi field unit for teledermatology in resource-limited settings
+> Marwein F, Balachander Y. *Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions using a Deep Learning Approach.* E-poster P2699, EADV Congress 2026, Vienna.
 
-## References
+Dataset: Tschandl P, Rosendahl C, Kittler H. *The HAM10000 dataset, a large collection of multi-source dermatoscopic images of common pigmented skin lesions.* Scientific Data 5, 180161 (2018).
 
-1. Criscione VD, et al. *Cancer.* 2009;115(11):2523-2530.
-2. Esteva A, et al. *Nature.* 2017;542(7631):115-118.
-3. Selvaraju RR, et al. Grad-CAM. *ICCV* 2017:618-626.
-4. Tschandl P, et al. The HAM10000 dataset. *Sci Data.* 2018;5:180161.
-5. Tan M, Le QV. EfficientNet. *ICML* 2019:6105-6114.
+## Licence
 
----
-
-*If you use this pipeline, please cite the ePoster: Marwein F, Balachander Y. Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions using a Deep Learning Approach. EADV Congress 2026, Vienna. E-Poster P2699.*
+No licence file yet — until one is added, default copyright applies and others cannot reuse the code. MIT is the usual choice for work like this and can be added from GitHub's "Add file → Create new file → LICENSE" template picker.
