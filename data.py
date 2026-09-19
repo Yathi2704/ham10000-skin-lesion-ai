@@ -150,6 +150,24 @@ class FileImageStore:
         self.__dict__.update(state)
 
 
+class NoImageStore:
+    """Placeholder when a Pool was loaded metadata-only (load_pool(require_images=False))."""
+
+    def __init__(self, data_dir: str | Path):
+        self.data_dir = Path(data_dir)
+
+    def __contains__(self, image_id: str) -> bool:
+        return False
+
+    def __len__(self) -> int:
+        return 0
+
+    def open(self, image_id: str) -> Image.Image:
+        raise RuntimeError(
+            f"images were not loaded (metadata-only pool); reload with load_pool({str(self.data_dir)!r}, require_images=True)"
+        )
+
+
 class MemoryImageStore:
     """image_id → in-memory PIL image (tests)."""
 
@@ -236,14 +254,16 @@ def verify_release(df: pd.DataFrame) -> None:
 def load_pool(data_dir: str | Path = DATA_DIR, require_images: bool = True, strict: bool = True) -> Pool:
     """Metadata (+ images) from `data_dir` → Pool. Fails loudly on anything short of the full release.
 
-    require_images=False skips the image check (split/fingerprint only — e.g. on a laptop
-    without the zips). strict=False skips the published-count assertion (tests only).
+    require_images=False never touches the image zips (split/fingerprint only — e.g. on a
+    laptop without them, or while they are still downloading); the Pool then carries a
+    NoImageStore that fails loudly if anything tries to read a picture.
+    strict=False skips the published-count assertion (tests only).
     """
     data_dir = Path(data_dir)
     df = load_metadata(data_dir / METADATA_CSV)
     if strict:
         verify_release(df)
-    images: ImageStore = FileImageStore(data_dir)
+    images: ImageStore = FileImageStore(data_dir) if require_images else NoImageStore(data_dir)
     if require_images:
         absent = [i for i in df["image_id"] if i not in images]
         if absent:

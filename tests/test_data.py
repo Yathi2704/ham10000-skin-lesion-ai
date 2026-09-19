@@ -218,6 +218,18 @@ def test_load_pool_requires_every_image(tmp_path):
         data.load_pool(tmp_path, strict=False)
     pool = data.load_pool(tmp_path, strict=False, require_images=False)
     assert pool.image_ids == ["ISIC_0000001", "ISIC_0000002"] and pool.labels.tolist() == [5, 4]
+    with pytest.raises(RuntimeError, match="images were not loaded"):
+        pool.images.open("ISIC_0000001")
+
+
+def test_metadata_only_pool_never_opens_the_zips(tmp_path):
+    """A half-downloaded zip must not break `python data.py` / the fingerprint (only the image path)."""
+    _write_csv(tmp_path / data.METADATA_CSV, [("HAM_1", "ISIC_0000001", "nv")])
+    (tmp_path / "HAM10000_images_part_1.zip").write_bytes(b"PK\x03\x04 truncated download")
+    pool = data.load_pool(tmp_path, strict=False, require_images=False)
+    assert pool.image_ids == ["ISIC_0000001"]
+    with pytest.raises(zipfile.BadZipFile):
+        data.load_pool(tmp_path, strict=False, require_images=True)
     with pytest.raises(ValueError, match="not the full HAM10000"):
         data.load_pool(tmp_path, require_images=False)  # strict by default
 
