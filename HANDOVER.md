@@ -4,6 +4,110 @@ Builder → reviewer baton. Updated at every ⛔ checkpoint in `.specs/tasks.md`
 
 ---
 
+## ⛔ Checkpoints 2 + 3 — Phase B server, Phase C frontend + tooling — 2026-09-19
+
+**Status:** tasks 5–10 done, one commit each. Built ahead of the Checkpoint 1 review at the user's
+instruction ("proceed into Phase B/C code; training spend stays frozen until Kimi's review of the
+amended code passes"). Nothing here needs the trained model to be *reviewed*; three integration tests
+need it to *run* and skip with the exact reason until it exists.
+
+| Commit | Task |
+|---|---|
+| `task 5: server scaffold` | lifespan model load, refusals, `GET /`, `/health` |
+| `task 6: POST /predict` | 10 MB cap, in-memory multipart, magic-byte + PIL validation, top-3 |
+| `task 7: Grad-CAM module` | `app/gradcam.py`, exact JSON contract |
+| `task 8: integration tests` | known-image top-3, bad uploads, latency (real + architecture) |
+| `task 9: mobile frontend` | `app/static/index.html`, verified in a 375×812 browser |
+| `task 10: demo tooling` | `make_qr.py`, `run.sh` (Mode A + `--tunnel`) |
+
+### What was built
+
+```
+app/__init__.py
+app/main.py          pick_device · load_model · build_transform · Predictor(predict) · _MemoryMultipart ·
+                     extract_upload · decode_image · read_body_capped · lifespan · GET,HEAD / · GET /health · POST /predict
+app/gradcam.py       HeatmapGenerator(heatmap, overlay_png) · png_to_base64
+app/static/index.html   single file, no external resources
+make_qr.py · run.sh
+tests/test_app.py (24) · tests/test_integration.py (5) · tests/test_tooling.py (5)
+```
+
+Test suite: **73 passed, 4 skipped** (`pytest -q -rs`); the 4 skips are the real-artifact tests.
+
+### Reviewer standing checklist → where to look
+
+| Check | Where |
+|---|---|
+| API response matches the contract exactly | `app/main.py:163` `Predictor.predict` returns exactly `{predictions[3]{class,label,probability}, heatmap_png_base64, inference_ms}`; `tests/test_app.py::_assert_contract` asserts the key set is *equal*, order by probability desc, labels from the fixed map, base64 decodes to a PNG, `inference_ms` is an int |
+| Model file missing/corrupt → refuse to start, loud | `app/main.py:89` `load_model` raises `ModelLoadError` for missing / unreadable / no state_dict / wrong arch / wrong label map / missing preprocessing metadata; `lifespan` (`app/main.py:284`) prints a banner and re-raises → uvicorn exits; `tests/test_app.py::test_startup_refuses_*` ×3; `run.sh` pre-checks the file too |
+| MPS with CPU fallback, no rented GPU | `app/main.py:78` `pick_device` (mps → cuda → cpu, `DEVICE` env override); `/health` reports it |
+| Non-JPEG/PNG → 400, > 10 MB → 413, corrupt → 400, inference error → 500 generic | `app/main.py:248` `decode_image` (magic bytes, `PIL.verify`, reload, EXIF transpose); `app/main.py:265` `read_body_capped` (Content-Length *and* mid-stream); `app/main.py:312` `predict` (500 + `log.exception`, message never leaks); `tests/test_app.py::test_predict_rejects_bad_uploads_with_friendly_4xx` (6 cases × 2 encodings), `::test_predict_rejects_oversize_upload_with_413`, `::test_read_body_capped_streams_and_stops_without_content_length`, `::test_predict_500_is_generic_when_inference_breaks` |
+| Nothing written to disk | the body is streamed into a `bytearray`; multipart is parsed with python-multipart callbacks into `BytesIO` (`app/main.py:197` `_MemoryMultipart`) — deliberately **not** Starlette's `UploadFile`, which spools > 1 MB to a temp file; Grad-CAM/PNG are `BytesIO`; `tests/test_app.py::test_predict_never_touches_disk` booby-traps `tempfile.*` and `Path.write_*` during a 2 MB upload |
+| Label map identical between training code and server | `app/main.py` `CLASS_NAMES`/`CLASS_LABELS` are a deliberate copy (the server imports no training code); `tests/test_app.py::test_label_map_identical_to_training_code`; the checkpoint's map is checked at load |
+| Server preprocessing == training eval transform | `app/main.py:126` `build_transform` rebuilds it from the checkpoint's own `image_size`/`normalization`; `tests/test_app.py::test_server_transform_equals_eval_transform` (tensor-equal to `data.get_transform()`) |
+| Grad-CAM on `model.features[-1]`, overlay on the original | `app/gradcam.py:28`; overlay downscaled to ≤ 512 px, aspect kept; `tests/test_app.py::test_gradcam_*`, `::test_heatmap_is_for_the_top1_class` (served PNG == direct Grad-CAM of `predictions[0]`) |
+| ≤ ~3 s per image on the M2 | measured with a 12 MP JPEG through the real server on MPS: **354 ms wall / 292 ms `inference_ms`** (random-weight checkpoint, same architecture) — `tests/test_integration.py::test_8_3_latency_budget_holds_for_the_architecture`; the real-model variant runs once `app/model_final.pth` exists |
+| Frontend works with zero internet | `app/static/index.html`: system fonts, inline SVG, `data:` favicon, plain `fetch('/predict')`; `tests/test_app.py::test_frontend_is_a_single_offline_file` greps for any external reference; `app/static/` contains exactly one file |
+| Camera capture + gallery upload, preview, spinner, overlay, top-3 bars (akiec highlighted), inference time, disclaimer | `index.html` — `#camera` (`capture="environment"`), `#gallery`, `#original`, `#spinner`, `#heatmap`, `.row.akiec` (outline + "focus" tag), `#meta`, `<footer>` (always visible, also on the landing view) |
+| No metrics in the UI | the page shows live probabilities only; the test asserts none of accuracy/sensitivity/specificity/F1/macro appear in the visible copy |
+| One stable URL, QR-encodable; hotspot mode | `run.sh` prints every LAN IPv4 (Mode A) and, with `--tunnel`, the `trycloudflare.com` URL + `qr.png` (Mode B); `make_qr.py` |
+
+### How I verified the frontend (reviewer can repeat)
+
+```bash
+MODEL_PATH=/path/to/any/train.py-checkpoint.pth ./run.sh        # e.g. a smoke checkpoint; then open http://localhost:8000
+```
+
+Opened in the desktop app's browser at 375×812: picked a canvas-drawn "lesion" JPEG → preview,
+spinner, 200 → overlay + three bars + "Inference 294 ms"; picked a `.txt` → red box "Only JPEG or
+PNG images are accepted."; stubbed `fetch` with an akiec-first response → outlined akiec row with the
+focus tag and 61 / 22 / 9 % bars. Console clean apart from the intentional 400. Server log showed
+`GET /` 200 and both `POST /predict` outcomes.
+
+### Known issues / notes (Phase B/C)
+
+- **`inference_ms` = preprocessing + forward + Grad-CAM + PNG**, not upload time. On a hotspot a 3 MB
+  photo adds ~0.2–0.5 s of transfer that the phone sees but the number doesn't include.
+- **HEIC.** iPhones hand JPEG to `<input type=file>` in almost all cases; if one ever sends HEIC the
+  server answers 400 "Only JPEG or PNG" and the page shows it. A client-side canvas re-encode would
+  remove that risk (and shrink uploads); not in the spec, so not built — decide at rehearsal.
+- **Concurrency.** One image at a time goes through the model + Grad-CAM hooks (`threading.Lock`);
+  a second phone waits ~0.3 s. Fine for a poster session.
+- **`/health`** exposes model path, device and provenance (epoch, `trained_on`, `trained_at`) —
+  no metrics. Useful during rehearsal (`curl http://<ip>:8000/health`).
+- **Not in the spec but present:** `GET /health`, `HEAD /`, `tests/test_tooling.py`, the 512 px cap on
+  the overlay, EXIF orientation handling. All small; say the word if any should go.
+
+### Conference-morning checklist (rehearsal target for Checkpoint 3)
+
+The night before
+- [ ] `git pull`; `ls app/` shows `model_final.pth` (+ `model_best.pth`, `metrics.csv`, `confusion_matrix.png`)
+- [ ] `.venv/bin/python -m pytest -q tests/test_app.py tests/test_integration.py` → all green, no skips
+- [ ] `./run.sh` → phone on the same Wi-Fi opens `http://<laptop-ip>:8000`, one photo round-trips
+- [ ] macOS: System Settings → General → Sharing → Internet Sharing: share from **Ethernet/none** to
+      **Wi-Fi**, set network name + WPA3 password; note the laptop IP it gives (usually `192.168.2.1`)
+- [ ] `python make_qr.py http://192.168.2.1:8000 --out qr_hotspot.png` → print it (Mode A)
+- [ ] `brew install cloudflared`; `./run.sh --tunnel` → `qr.png` with the public URL → print it (Mode B);
+      the URL changes every restart — print in the morning if the laptop restarts
+- [ ] Energy: Battery → Options → **Prevent automatic sleeping on power adapter**; lid-closed = sleep, so
+      keep it open; a display-sleep is fine, the server keeps running
+- [ ] Charger, USB-C hub, the three printed QR sheets (Mode A, Mode B, blank spare)
+
+At the poster (10 min)
+- [ ] Laptop on power, lid open, Internet Sharing ON (or the venue Wi-Fi if it proved reliable)
+- [ ] `./run.sh` (or `./run.sh --tunnel`) in a terminal you keep visible — the log shows every request
+- [ ] Own phone: join the hotspot, scan the QR, run one photo → overlay + bars appear
+- [ ] `curl http://localhost:8000/health` — device says `mps`
+- [ ] If the venue blocks the tunnel: tell attendees to join the hotspot (Mode A works with zero internet)
+
+If it breaks
+- server refuses to start → the banner names the exact reason (model path / corrupt / label map)
+- phone says "Cannot reach the demo server" → wrong network; re-join the hotspot, re-scan
+- 400/413 on the phone → not a JPEG/PNG or > 10 MB; use the camera button instead of the gallery
+- laptop slept → reopen, `./run.sh` again; Mode B needs a fresh QR (URL changed)
+
+---
+
 ## ⛔ Checkpoint 1 (amended C) — Phase A training pipeline — 2026-09-19
 
 **Status:** tasks 1–4 plus amendment 4C done, one commit each (`git log --oneline`).

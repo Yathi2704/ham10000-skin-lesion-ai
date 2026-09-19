@@ -4,6 +4,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 from PIL import Image
 
@@ -17,7 +18,7 @@ def test_make_qr_writes_a_decodable_png(tmp_path):
     img = Image.open(out)
     assert img.format == "PNG" and img.size[0] == img.size[1] and img.size[0] > 200
     # a QR code is black-and-white: exactly two greyscale values
-    assert set(img.convert("L").getdata()) <= {0, 255}
+    assert set(np.asarray(img.convert("L")).flatten().tolist()) <= {0, 255}
 
 
 def test_make_qr_rejects_non_urls(tmp_path):
