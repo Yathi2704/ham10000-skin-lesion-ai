@@ -1,0 +1,12 @@
+# environments
+.venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# trained weights are scp'd into app/ after the Vast.ai run — too large to version
+*.pth
+
+# local scratch / OS
+.DS_Store
+*.log
