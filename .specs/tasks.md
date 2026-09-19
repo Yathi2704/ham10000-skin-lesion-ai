@@ -36,9 +36,9 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
 
 ## Phase B: Inference server (M2 Air)
 
-- [ ] 5. Server scaffold (`app/main.py`)
-  - [ ] 5.1 FastAPI app; load `app/model_final.pth` (`MODEL_PATH` override) at startup on MPS with CPU fallback; refuse to start with explicit error if missing/corrupt  [C]
-  - [ ] 5.2 `GET /` serves `static/index.html` (placeholder page for now)
+- [x] 5. Server scaffold (`app/main.py`)
+  - [x] 5.1 FastAPI app; load `app/model_final.pth` (`MODEL_PATH` override) at startup on MPS with CPU fallback; refuse to start with explicit error if missing/corrupt  [C]
+  - [x] 5.2 `GET /` serves `static/index.html` (placeholder page for now)
   - _Requirements: inference-server — 2, 3_
 
 - [ ] 6. `POST /predict` endpoint

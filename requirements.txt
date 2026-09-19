@@ -16,4 +16,4 @@ python-multipart>=0.0.9
 
 # Tests
 pytest>=8
-httpx>=0.27            # FastAPI TestClient backend (Phase B integration tests)
+httpx2>=2.0            # FastAPI TestClient backend (Phase B integration tests)
