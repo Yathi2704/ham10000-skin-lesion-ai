@@ -41,9 +41,9 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - [x] 5.2 `GET /` serves `static/index.html` (placeholder page for now)
   - _Requirements: inference-server — 2, 3_
 
-- [ ] 6. `POST /predict` endpoint
-  - [ ] 6.1 Upload validation: JPEG/PNG only, ≤ 10 MB, corrupt bytes → friendly 4xx
-  - [ ] 6.2 Preprocess → infer → return top-3 predictions + inference_ms per the JSON contract; fully in-memory
+- [x] 6. `POST /predict` endpoint
+  - [x] 6.1 Upload validation: JPEG/PNG only, ≤ 10 MB, corrupt bytes → friendly 4xx
+  - [x] 6.2 Preprocess → infer → return top-3 predictions + inference_ms per the JSON contract; fully in-memory
   - _Requirements: inference-server — 1, 4, 5, 6_
 
 - [ ] 7. Grad-CAM module (`app/gradcam.py`)

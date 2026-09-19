@@ -9,13 +9,18 @@ only; nothing from the training code.
 
 Routes:  GET /          the single-file mobile frontend (app/static/index.html)
          GET /health    model + device info (no metrics — numbers live in metrics.csv)
-         POST /predict  JPEG/PNG upload → top-3 + Grad-CAM overlay (task 6/7)
+         POST /predict  JPEG/PNG upload (raw body or multipart field "file") → top-3 + inference_ms
+
+Uploads never touch disk: the body is read into memory (capped at 10 MB) and multipart is
+parsed in memory too — Starlette's own UploadFile would spool anything over 1 MB to a temp file.
 """
 
 from __future__ import annotations
 
+import io
 import logging
 import os
+import re
 import sys
 import threading
 import time
@@ -24,8 +29,11 @@ from pathlib import Path
 from typing import Any
 
 import torch
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse
+from PIL import Image, ImageOps, UnidentifiedImageError
+from python_multipart import MultipartParser
 from torch import nn
 from torchvision import transforms
 from torchvision.models import efficientnet_b0
@@ -49,6 +57,16 @@ CLASS_LABELS: dict[str, str] = {
     "vasc": "Vascular lesion",
 }
 ARCH = "efficientnet_b0"
+
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024  # design.md: > 10 MB → 413
+TOP_K = 3
+JPEG_MAGIC = b"\xff\xd8\xff"
+PNG_MAGIC = b"\x89PNG\r\n\x1a\n"
+MSG_TOO_LARGE = "Image is too large — please send a JPEG or PNG under 10 MB."
+MSG_WRONG_TYPE = "Only JPEG or PNG images are accepted."
+MSG_UNREADABLE = "That image could not be read — please try another photo."
+MSG_EMPTY = "No image received — attach a JPEG or PNG."
+MSG_INFERENCE = "Inference failed on the server — please try another image."
 
 
 class ModelLoadError(RuntimeError):
@@ -137,6 +155,112 @@ class Predictor:
         }
 
 
+    def predict(self, image: Image.Image) -> dict[str, Any]:
+        """One RGB PIL image → the /predict JSON body (design.md → API contract)."""
+        t0 = time.perf_counter()
+        x = self.transform(image).unsqueeze(0).to(self.device)
+        with self.lock:
+            with torch.no_grad():
+                probs = torch.softmax(self.model(x), dim=1)[0]
+            top = torch.topk(probs, k=TOP_K)
+        predictions = [
+            {
+                "class": CLASS_NAMES[int(i)],
+                "label": CLASS_LABELS[CLASS_NAMES[int(i)]],
+                "probability": round(float(p), 4),
+            }
+            for p, i in zip(top.values.tolist(), top.indices.tolist())
+        ]
+        return {"predictions": predictions, "inference_ms": int(round((time.perf_counter() - t0) * 1000))}
+
+
+# --------------------------------------------------------------------------- #
+# Upload handling — everything stays in memory
+# --------------------------------------------------------------------------- #
+class _MemoryMultipart:
+    """Minimal in-memory multipart/form-data reader (python-multipart callbacks → BytesIO)."""
+
+    def __init__(self, boundary: str):
+        self.parts: list[dict[str, Any]] = []
+        self._field = b""
+        self._value = b""
+        self._parser = MultipartParser(
+            boundary,
+            {
+                "on_part_begin": self._begin,
+                "on_header_field": lambda data, start, end: self._append("_field", data[start:end]),
+                "on_header_value": lambda data, start, end: self._append("_value", data[start:end]),
+                "on_header_end": self._header_end,
+                "on_part_data": lambda data, start, end: self.parts[-1]["data"].write(data[start:end]),
+            },
+        )
+
+    def _begin(self) -> None:
+        self.parts.append({"headers": {}, "data": io.BytesIO()})
+
+    def _append(self, attr: str, chunk: bytes) -> None:
+        setattr(self, attr, getattr(self, attr) + chunk)
+
+    def _header_end(self) -> None:
+        self.parts[-1]["headers"][self._field.decode("latin-1").lower()] = self._value.decode("latin-1")
+        self._field, self._value = b"", b""
+
+    def feed(self, body: bytes) -> list[dict[str, Any]]:
+        self._parser.write(body)
+        self._parser.finalize()
+        return self.parts
+
+
+def extract_upload(body: bytes, content_type: str) -> bytes:
+    """Raw image body, or the `file` part (else the first file part) of a multipart body."""
+    ctype = (content_type or "").lower()
+    if not ctype.startswith("multipart/form-data"):
+        return body
+    m = re.search(r'boundary="?([^";]+)"?', content_type, flags=re.IGNORECASE)
+    if not m:
+        raise HTTPException(status_code=400, detail=MSG_EMPTY)
+    try:
+        parts = _MemoryMultipart(m.group(1)).feed(body)
+    except Exception:
+        raise HTTPException(status_code=400, detail=MSG_EMPTY) from None
+    files = [p for p in parts if "filename=" in p["headers"].get("content-disposition", "")]
+    named = [p for p in files if re.search(r'name="?file"?', p["headers"]["content-disposition"])]
+    chosen = (named or files or parts)[:1]
+    if not chosen:
+        raise HTTPException(status_code=400, detail=MSG_EMPTY)
+    return chosen[0]["data"].getvalue()
+
+
+def decode_image(raw: bytes) -> Image.Image:
+    """Bytes → RGB PIL image, or a friendly 4xx. JPEG/PNG only, judged by magic bytes not by name."""
+    if not raw:
+        raise HTTPException(status_code=400, detail=MSG_EMPTY)
+    if not (raw.startswith(JPEG_MAGIC) or raw.startswith(PNG_MAGIC)):
+        raise HTTPException(status_code=400, detail=MSG_WRONG_TYPE)
+    try:
+        probe = Image.open(io.BytesIO(raw))
+        probe.verify()  # structural check; invalidates `probe`
+        image = Image.open(io.BytesIO(raw))
+        image = ImageOps.exif_transpose(image)  # honour the phone's orientation tag
+        image.load()
+        return image.convert("RGB")
+    except (UnidentifiedImageError, OSError, ValueError, Image.DecompressionBombError):
+        raise HTTPException(status_code=400, detail=MSG_UNREADABLE) from None
+
+
+async def read_body_capped(request: Request, limit: int = MAX_UPLOAD_BYTES) -> bytes:
+    """Stream the body into memory; 413 as soon as it exceeds `limit` (Content-Length may lie or be absent)."""
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > limit:
+        raise HTTPException(status_code=413, detail=MSG_TOO_LARGE)
+    buf = bytearray()
+    async for chunk in request.stream():
+        buf += chunk
+        if len(buf) > limit:
+            raise HTTPException(status_code=413, detail=MSG_TOO_LARGE)
+    return bytes(buf)
+
+
 def _startup_failure(exc: BaseException) -> None:
     banner = "=" * 72
     print(f"\n{banner}\nSKIN DEMO SERVER REFUSED TO START\n{exc}\n{banner}\n", file=sys.stderr, flush=True)
@@ -168,3 +292,17 @@ async def index() -> FileResponse:
 @app.get("/health")
 async def health() -> dict[str, Any]:
     return {"status": "ok", **app.state.predictor.info()}
+
+
+@app.post("/predict")
+async def predict(request: Request) -> dict[str, Any]:
+    body = await read_body_capped(request)
+    raw = extract_upload(body, request.headers.get("content-type", ""))
+    if len(raw) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail=MSG_TOO_LARGE)
+    image = decode_image(raw)
+    try:
+        return await run_in_threadpool(app.state.predictor.predict, image)
+    except Exception:
+        log.exception("inference failed (%sx%s %s)", image.width, image.height, image.mode)
+        raise HTTPException(status_code=500, detail=MSG_INFERENCE) from None
