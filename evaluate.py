@@ -1,8 +1,11 @@
 """Evaluate `model_best.pth` on the canonical held-out test set.
 
 Every number here is computed live from the model's predictions on the test
-partition of the seed-42 split (requirements: model-training 6–8,
+partition of the seed-42 lesion-grouped split (requirements: model-training 6–8,
 honesty-reproducibility 1–2). Nothing is hardcoded; nothing is cached.
+
+Only a split-run checkpoint (`trained_on == "train"`) is accepted: the 100 %-data
+demo model (`model_final.pth`) has seen the test images and is refused.
 
     python evaluate.py --checkpoint app/model_best.pth
 
@@ -162,7 +165,7 @@ def print_report(rows: list[dict[str, Any]]) -> None:
 # --------------------------------------------------------------------------- #
 def run(
     checkpoint: str | Path,
-    pool: Any,
+    pool: data.Pool,
     split: dict[str, np.ndarray],
     out_dir: str | Path,
     device: torch.device | None = None,
@@ -175,12 +178,18 @@ def run(
     out_dir.mkdir(parents=True, exist_ok=True)
     model, meta = load_checkpoint(checkpoint, device)
 
-    fingerprint = data.split_fingerprint(split, pool["image_id"])
+    if meta.get("trained_on") != "train" or not meta.get("split_fingerprint"):
+        raise RuntimeError(
+            f"refusing to evaluate {checkpoint}: trained_on={meta.get('trained_on')!r}. "
+            "Only the split-run checkpoint (model_best.pth) may be scored — the full-data demo model "
+            "(model_final.pth) has seen the test images, so its metrics would be contaminated."
+        )
+    fingerprint = data.split_fingerprint(split, pool.image_ids)
     if meta.get("split_fingerprint") != fingerprint:
         raise RuntimeError(
             "split mismatch: the checkpoint was trained on split "
             f"{meta.get('split_fingerprint')!r} but this evaluation would use {fingerprint!r} "
-            "— the test set may overlap the model's training data. Use the same --dataset and seed 42."
+            "— the test set may overlap the model's training data. Use the same data and seed 42."
         )
 
     loader = data.build_dataloaders(pool, split, batch_size=batch_size, num_workers=num_workers)["test"]
@@ -189,6 +198,7 @@ def run(
 
     rows = compute_metrics(y_true, y_pred)
     rows += [  # provenance, so the CSV alone says which model and split produced it
+        {"metric": "checkpoint_file", "class": "meta", "value": Path(checkpoint).name},
         {"metric": "checkpoint_epoch", "class": "meta", "value": int(meta.get("epoch", 0))},
         {"metric": "checkpoint_val_macro_f1", "class": "meta", "value": float(meta.get("val_macro_f1", float("nan")))},
         {"metric": "split_fingerprint", "class": "meta", "value": fingerprint},
@@ -203,15 +213,15 @@ def run(
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Evaluate model_best.pth on the canonical HAM10000 test split.")
-    parser.add_argument("--checkpoint", default="app/model_best.pth")
-    parser.add_argument("--dataset", default=data.DATASET_NAME, help="HF dataset id (must match training)")
+    parser.add_argument("--checkpoint", default="app/model_best.pth", help="split-run checkpoint (never model_final.pth)")
+    parser.add_argument("--data-dir", default=str(data.DATA_DIR), help="metadata CSV + image zips (default: %(default)s)")
     parser.add_argument("--out-dir", default=None, help="where to write metrics.csv + confusion_matrix.png (default: checkpoint dir)")
     parser.add_argument("--batch-size", type=int, default=BATCH_SIZE)
     parser.add_argument("--num-workers", type=int, default=0)
     parser.add_argument("--device", default=None, help="override: cuda | mps | cpu")
     args = parser.parse_args()
 
-    pool, split = data.load_split_data(args.dataset)
+    pool, split = data.load_split_data(args.data_dir)
     run(
         args.checkpoint,
         pool,

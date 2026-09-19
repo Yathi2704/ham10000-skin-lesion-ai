@@ -123,8 +123,7 @@ def test_load_checkpoint_roundtrip(tmp_path):
 
 # ------------------------------------------------------------ end to end --
 def test_run_end_to_end_and_split_guard(tmp_path, tiny_pool):
-    labels = np.asarray(tiny_pool["label"])
-    split = data.make_split(labels)
+    split = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids)
     ckpt = tmp_path / "model_best.pth"
     train.train(tiny_pool, split, ckpt, epochs=1, batch_size=8, device=torch.device("cpu"), pretrained=False)
 
@@ -132,9 +131,19 @@ def test_run_end_to_end_and_split_guard(tmp_path, tiny_pool):
     assert (tmp_path / "metrics.csv").is_file() and (tmp_path / "confusion_matrix.png").is_file()
     by = {(r["metric"], r["class"]): r["value"] for r in rows}
     assert by[("n_test", "all")] == len(split["test"])
-    assert by[("split_fingerprint", "meta")] == data.split_fingerprint(split, tiny_pool["image_id"])
+    assert by[("split_fingerprint", "meta")] == data.split_fingerprint(split, tiny_pool.image_ids)
+    assert by[("checkpoint_file", "meta")] == "model_best.pth"
 
     # a different split (seed 43) must be refused — the test set could overlap training data
-    other = data.make_split(labels, seed=43)
+    other = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids, seed=43)
     with pytest.raises(RuntimeError, match="split mismatch"):
         evaluate.run(ckpt, tiny_pool, other, out_dir=tmp_path, device=torch.device("cpu"), batch_size=8)
+
+
+def test_run_refuses_the_full_data_demo_model(tmp_path, tiny_pool):
+    split = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids)
+    final = tmp_path / "model_final.pth"
+    train.train_full(tiny_pool, final, epochs=1, batch_size=8, device=torch.device("cpu"), pretrained=False)
+    with pytest.raises(RuntimeError, match="refusing to evaluate"):
+        evaluate.run(final, tiny_pool, split, out_dir=tmp_path, device=torch.device("cpu"), batch_size=8)
+    assert not (tmp_path / "metrics.csv").exists()  # nothing written for a refused model

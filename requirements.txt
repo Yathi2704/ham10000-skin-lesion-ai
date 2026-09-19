@@ -2,7 +2,7 @@
 # On a Vast.ai PyTorch image torch/torchvision are preinstalled; pip will keep them.
 torch>=2.9
 torchvision>=0.24
-datasets>=3.0
+pandas>=2.2            # HAM10000_metadata.csv
 fastapi>=0.115
 uvicorn[standard]>=0.30
 grad-cam>=1.5          # PyPI name of pytorch-grad-cam (import: pytorch_grad_cam)

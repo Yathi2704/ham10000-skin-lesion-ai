@@ -81,8 +81,7 @@ def test_checkpoint_loads_without_training_code(tmp_path):
 
 # -------------------------------------------------- training loop (smoke) --
 def test_train_loop_saves_best_and_logs(tmp_path, tiny_pool):
-    labels = np.asarray(tiny_pool["label"])
-    split = data.make_split(labels)
+    split = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids)
     out = tmp_path / "model_best.pth"
     best = train.train(
         tiny_pool, split, out, epochs=2, patience=5, batch_size=8,
@@ -90,9 +89,10 @@ def test_train_loop_saves_best_and_logs(tmp_path, tiny_pool):
     )
     assert out.exists() and best["epoch"] >= 1
     ckpt = torch.load(out, map_location="cpu", weights_only=True)
-    assert ckpt["dataset"] == "tiny"
-    assert ckpt["split_fingerprint"] == data.split_fingerprint(split, tiny_pool["image_id"])
-    assert ckpt["class_weights"] == pytest.approx([1.0] * NUM_CLASSES)  # balanced tiny pool
+    assert ckpt["dataset"] == "tiny" and ckpt["trained_on"] == "train"
+    assert ckpt["n_train_images"] == len(split["train"])
+    assert ckpt["split_fingerprint"] == data.split_fingerprint(split, tiny_pool.image_ids)
+    assert ckpt["class_weights"] == pytest.approx(train.compute_class_weights(tiny_pool.labels[split["train"]]).tolist())
     assert ckpt["val_macro_f1"] == pytest.approx(best["val_macro_f1"])
 
     with open(tmp_path / "train_log.csv") as f:
@@ -102,8 +102,7 @@ def test_train_loop_saves_best_and_logs(tmp_path, tiny_pool):
 
 
 def test_early_stopping_triggers(tmp_path, tiny_pool):
-    labels = np.asarray(tiny_pool["label"])
-    split = data.make_split(labels)
+    split = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids)
     # lr=0 → the model never changes → val macro-F1 never improves after epoch 1 → stop at 1 + patience
     train.train(
         tiny_pool, split, tmp_path / "m.pth", epochs=10, patience=2, lr=0.0, batch_size=8,
@@ -119,3 +118,28 @@ def test_predict_fails_loudly_on_empty_loader():
     empty = torch.utils.data.DataLoader([], batch_size=1)
     with pytest.raises(RuntimeError):
         train.predict(model, empty, torch.device("cpu"))
+
+
+# ------------------------------------------------- full-data retrain (--mode full) --
+def test_train_full_saves_demo_model_with_provenance(tmp_path, tiny_pool):
+    split = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids)
+    best_path = tmp_path / "model_best.pth"
+    train.train(tiny_pool, split, best_path, epochs=2, patience=5, batch_size=8, device=torch.device("cpu"), pretrained=False)
+    epochs, provenance = train.epochs_from_checkpoint(best_path)
+    assert epochs in (1, 2) and provenance["split_fingerprint"] == data.split_fingerprint(split, tiny_pool.image_ids)
+
+    final_path = tmp_path / "model_final.pth"
+    train.train_full(tiny_pool, final_path, epochs=epochs, derived_from=provenance, batch_size=8,
+                     device=torch.device("cpu"), pretrained=False, dataset_name="tiny")
+    ckpt = torch.load(final_path, map_location="cpu", weights_only=True)
+    assert ckpt["trained_on"] == "all" and ckpt["split_fingerprint"] is None
+    assert ckpt["epoch"] == epochs and ckpt["n_train_images"] == len(tiny_pool)
+    assert ckpt["derived_from"]["checkpoint"] == str(best_path)
+    assert ckpt["class_weights"] == pytest.approx([1.0] * NUM_CLASSES)  # tiny pool is balanced
+    with open(tmp_path / "train_log_full.csv") as f:
+        assert [r["epoch"] for r in csv.DictReader(f)] == [str(e) for e in range(1, epochs + 1)]
+
+    with pytest.raises(ValueError, match="not a split-run checkpoint"):
+        train.epochs_from_checkpoint(final_path)  # a full model cannot seed another full run
+    with pytest.raises(ValueError, match="epochs"):
+        train.train_full(tiny_pool, final_path, epochs=0, device=torch.device("cpu"), pretrained=False)

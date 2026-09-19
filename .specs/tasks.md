@@ -24,12 +24,20 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - [x] 4.2 Write `metrics.csv` and `confusion_matrix.png`
   - _Requirements: model-training — 6, 7, 8; honesty-reproducibility — 1, 2_
 
-**⛔ CHECKPOINT 1 — reviewer verifies: split logic, seeding, class weighting, no hardcoded metrics, artifacts saved. User then runs training on Vast.ai (RTX 4090 spot, ~1–2 h) and scp's `model_best.pth`, `metrics.csv`, `confusion_matrix.png` down to `app/`.**
+- [x] 4C. Amendment C — original HAM10000, lesion-grouped split, augmentation, evaluate-then-retrain
+  - [x] 4C.1 `data.py`: load `data/ham10000/HAM10000_metadata.csv` + image zips, de-dup by `image_id`, `dx` alias table, assert 10 015 images + published class counts
+  - [x] 4C.2 Split grouped by `lesion_id`, stratified, seed 42; report images + lesions per partition; fingerprint regenerated (`4b4cc59260945104`)
+  - [x] 4C.3 Train-time augmentation (random flips + 90° rotations) on the train partition only; eval transform unchanged
+  - [x] 4C.4 `train.py --mode full --epochs-from app/model_best.pth` → `model_final.pth` (100 % of images, fixed epochs, provenance); `evaluate.py` refuses it
+  - [x] 4C.5 Spec amended (requirements/design/tasks), Vast.ai instructions + HANDOVER updated, tests updated
+  - _Requirements: model-training — 1, 2, 6, 11; honesty-reproducibility — 3, 4_
+
+**⛔ CHECKPOINT 1 — reviewer verifies: split logic, seeding, class weighting, no hardcoded metrics, artifacts saved. [C] Also: release assertions, lesion grouping, augmentation on train only, full-mode provenance, evaluator refusal. Training spend stays frozen until this review of the amended code passes. User then runs on Vast.ai (RTX 4090 spot): `data.py --check-images` → `train.py` → `evaluate.py` → `train.py --mode full --epochs-from app/model_best.pth`, and scp's `model_best.pth`, `model_final.pth`, `metrics.csv`, `confusion_matrix.png`, `train_log*.csv` down to `app/`.**
 
 ## Phase B: Inference server (M2 Air)
 
 - [ ] 5. Server scaffold (`app/main.py`)
-  - [ ] 5.1 FastAPI app; load `model_best.pth` at startup on MPS with CPU fallback; refuse to start with explicit error if missing/corrupt
+  - [ ] 5.1 FastAPI app; load `app/model_final.pth` (`MODEL_PATH` override) at startup on MPS with CPU fallback; refuse to start with explicit error if missing/corrupt  [C]
   - [ ] 5.2 `GET /` serves `static/index.html` (placeholder page for now)
   - _Requirements: inference-server — 2, 3_
 

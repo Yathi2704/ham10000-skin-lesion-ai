@@ -7,6 +7,11 @@ __pycache__/
 # trained weights are scp'd into app/ after the Vast.ai run — too large to version
 *.pth
 
+# HAM10000 images (2.7 GB) live next to the committed metadata CSV — see data/ham10000/README.md
+data/ham10000/*.zip
+data/ham10000/**/*.jpg
+data/ham10000/**/*.jpeg
+
 # local scratch / OS
 .DS_Store
 *.log
