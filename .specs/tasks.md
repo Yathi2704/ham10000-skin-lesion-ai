@@ -50,10 +50,10 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - [x] 7.1 Grad-CAM on `model.features[-1]`, overlay on original image, return base64 PNG in the response
   - _Requirements: inference-server — 1, 6_
 
-- [ ] 8. Integration tests
-  - [ ] 8.1 Three known HAM10000 test images → expected class in top-3
-  - [ ] 8.2 Corrupt file, wrong type, oversize → correct 4xx responses
-  - [ ] 8.3 Latency check: single image < 3 s on the M2 Air
+- [x] 8. Integration tests
+  - [x] 8.1 Three known HAM10000 test images → expected class in top-3
+  - [x] 8.2 Corrupt file, wrong type, oversize → correct 4xx responses
+  - [x] 8.3 Latency check: single image < 3 s on the M2 Air
   - _Requirements: inference-server — 1, 4; honesty-reproducibility — 1_
 
 **⛔ CHECKPOINT 2 — reviewer verifies: API contract exact match, error handling fails loudly, nothing written to disk, tests pass.**
