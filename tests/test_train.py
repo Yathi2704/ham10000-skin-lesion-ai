@@ -80,22 +80,6 @@ def test_checkpoint_loads_without_training_code(tmp_path):
 
 
 # -------------------------------------------------- training loop (smoke) --
-@pytest.fixture(scope="module")
-def tiny_pool():
-    """In-memory HF dataset: 10 random 32x32 images per class (no download needed)."""
-    from datasets import Dataset, Features, Image as HFImage, Value
-
-    rng = np.random.default_rng(0)
-    images, labels, ids = [], [], []
-    for c in range(NUM_CLASSES):
-        for k in range(10):
-            images.append(Image.fromarray(rng.integers(0, 256, size=(32, 32, 3), dtype=np.uint8)))
-            labels.append(c)
-            ids.append(f"FAKE_{c}_{k:02d}")
-    features = Features({"image": HFImage(), "label": Value("int64"), "image_id": Value("string")})
-    return Dataset.from_dict({"image": images, "label": labels, "image_id": ids}, features=features)
-
-
 def test_train_loop_saves_best_and_logs(tmp_path, tiny_pool):
     labels = np.asarray(tiny_pool["label"])
     split = data.make_split(labels)

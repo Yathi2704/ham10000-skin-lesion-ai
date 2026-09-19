@@ -19,9 +19,9 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - [x] 3.2 Training loop with validation macro-F1 each epoch, early stopping, save best as `model_best.pth` (state_dict + label map)
   - _Requirements: model-training — 4, 5_
 
-- [ ] 4. Implement `evaluate.py`
-  - [ ] 4.1 Load `model_best.pth`, run on test set, compute per-class precision/recall/F1 + weighted averages + akiec sensitivity/specificity from live predictions
-  - [ ] 4.2 Write `metrics.csv` and `confusion_matrix.png`
+- [x] 4. Implement `evaluate.py`
+  - [x] 4.1 Load `model_best.pth`, run on test set, compute per-class precision/recall/F1 + weighted averages + akiec sensitivity/specificity from live predictions
+  - [x] 4.2 Write `metrics.csv` and `confusion_matrix.png`
   - _Requirements: model-training — 6, 7, 8; honesty-reproducibility — 1, 2_
 
 **⛔ CHECKPOINT 1 — reviewer verifies: split logic, seeding, class weighting, no hardcoded metrics, artifacts saved. User then runs training on Vast.ai (RTX 4090 spot, ~1–2 h) and scp's `model_best.pth`, `metrics.csv`, `confusion_matrix.png` down to `app/`.**
