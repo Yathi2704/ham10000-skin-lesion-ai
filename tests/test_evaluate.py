@@ -144,9 +144,10 @@ def test_run_refuses_the_full_data_demo_model(tmp_path, tiny_pool):
     split = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids)
     final = tmp_path / "model_final.pth"
     train.train_full(tiny_pool, final, epochs=1, batch_size=8, device=torch.device("cpu"), pretrained=False)
+    out_dir = tmp_path / "refused"
     with pytest.raises(RuntimeError, match="refusing to evaluate"):
-        evaluate.run(final, tiny_pool, split, out_dir=tmp_path, device=torch.device("cpu"), batch_size=8)
-    assert not (tmp_path / "metrics.csv").exists()  # nothing written for a refused model
+        evaluate.run(final, tiny_pool, split, out_dir=out_dir, device=torch.device("cpu"), batch_size=8)
+    assert not out_dir.exists()  # nothing written for a refused model — not even the directory
 
 
 def test_run_tolerates_checkpoint_without_val_macro_f1(tmp_path, tiny_pool):

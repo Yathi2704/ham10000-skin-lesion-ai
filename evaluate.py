@@ -175,7 +175,6 @@ def run(
     """Held-out test evaluation → metrics.csv + confusion_matrix.png in `out_dir`."""
     device = device or get_device()
     out_dir = Path(out_dir)
-    out_dir.mkdir(parents=True, exist_ok=True)
     model, meta = load_checkpoint(checkpoint, device)
 
     if meta.get("trained_on") != "train" or not meta.get("split_fingerprint"):
@@ -207,6 +206,7 @@ def run(
         {"metric": "split_fingerprint", "class": "meta", "value": fingerprint},
         {"metric": "dataset", "class": "meta", "value": str(meta.get("dataset", ""))},
     ]
+    out_dir.mkdir(parents=True, exist_ok=True)  # only now: a refused checkpoint leaves no trace
     csv_path = write_metrics_csv(rows, out_dir / METRICS_CSV)
     png_path = save_confusion_matrix(y_true, y_pred, out_dir / CONFUSION_PNG)
     print_report(rows)
