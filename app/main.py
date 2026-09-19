@@ -298,7 +298,7 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="EADV skin-lesion demo", docs_url=None, redoc_url=None, lifespan=lifespan)
 
 
-@app.get("/", include_in_schema=False)
+@app.api_route("/", methods=["GET", "HEAD"], include_in_schema=False)
 async def index() -> FileResponse:
     return FileResponse(STATIC_DIR / "index.html", media_type="text/html")
 

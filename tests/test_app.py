@@ -296,3 +296,22 @@ def test_heatmap_is_for_the_top1_class(client, fake_checkpoint):
     top1 = data.CLASS_NAMES.index(body["predictions"][0]["class"])
     expected = HeatmapGenerator(model).overlay_png(x, top1, original)
     assert np.array_equal(np.asarray(Image.open(io.BytesIO(served))), np.asarray(Image.open(io.BytesIO(expected))))
+
+
+# ------------------------------------------------------------- frontend --
+def test_frontend_is_a_single_offline_file():
+    """design.md: one static HTML file, no build step, no CDN / external fonts or scripts (hotspot mode)."""
+    html = (REPO / "app" / "static" / "index.html").read_text()
+    assert not (REPO / "app" / "static" / "package.json").exists()
+    assert len(list((REPO / "app" / "static").iterdir())) == 1
+    for pattern in ("http://", "https://", "//cdn", "@import", "<link rel=\"stylesheet\"", "<script src", "fonts.googleapis"):
+        assert pattern not in html, pattern
+    assert 'capture="environment"' in html and 'accept="image/*"' in html
+    assert html.count('type="file"') == 2  # camera + gallery
+    assert "not a diagnostic device" in html.lower()
+    assert "fetch('/predict'" in html and "heatmap_png_base64" in html and "inference_ms" in html
+    assert "akiec" in html  # highlighted focus class
+    import re
+    text = re.sub(r"<(style|script)[^>]*>.*?</\1>", " ", html, flags=re.S | re.I)  # visible copy only
+    for metric_word in ("accuracy", "sensitivity", "specificity", "f1-score", "macro"):
+        assert metric_word not in text.lower()  # the UI shows live predictions only, never metrics

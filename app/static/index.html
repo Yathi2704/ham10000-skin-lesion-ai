@@ -2,12 +2,192 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#0f766e">
 <title>Skin-lesion demo</title>
+<link rel="icon" href="data:,">
+<!-- Single file, no build step, no CDN, no web fonts: must work on the laptop hotspot with zero internet. -->
+<style>
+  :root {
+    --bg: #f6f7f9; --card: #ffffff; --ink: #14181d; --muted: #5b6673; --line: #e3e7ec;
+    --accent: #0f766e; --accent-ink: #ffffff; --bar: #cbd5e1; --bar-top: #0f766e;
+    --akiec: #b45309; --akiec-bg: #fff4e5; --err: #b91c1c; --err-bg: #fee2e2;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1216; --card: #171b21; --ink: #eef1f4; --muted: #9aa5b1; --line: #2a313a;
+      --bar: #2f3843; --akiec: #fbbf24; --akiec-bg: #2b2210; --err: #fca5a5; --err-bg: #3b1212;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--ink);
+    font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; }
+  main { max-width: 560px; margin: 0 auto; padding: 16px 16px 40px; }
+  header { padding: 8px 0 16px; }
+  h1 { font-size: 1.35rem; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 16px; padding: 16px; margin-top: 14px; }
+  .buttons { display: grid; gap: 10px; }
+  .btn { display: flex; align-items: center; justify-content: center; gap: 10px; width: 100%;
+    min-height: 60px; border-radius: 14px; border: 1px solid var(--line); background: var(--card);
+    color: var(--ink); font-size: 1.05rem; font-weight: 600; cursor: pointer; touch-action: manipulation; }
+  .btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  .btn:active { transform: scale(0.99); }
+  .btn input { display: none; }
+  .btn svg { width: 24px; height: 24px; flex: none; }
+  .hint { color: var(--muted); font-size: 0.85rem; text-align: center; margin: 10px 0 0; }
+  .hidden { display: none !important; }
+  .images { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+  .images figure { margin: 0; }
+  .images img { width: 100%; aspect-ratio: 4 / 3; object-fit: cover; border-radius: 12px; background: var(--line); display: block; }
+  .images figcaption { font-size: 0.78rem; color: var(--muted); margin-top: 6px; text-align: center; }
+  #preview-only .images { grid-template-columns: 1fr; }
+  .spinner { display: flex; align-items: center; gap: 12px; margin-top: 14px; color: var(--muted); }
+  .spinner i { width: 22px; height: 22px; border-radius: 50%; border: 3px solid var(--line);
+    border-top-color: var(--accent); animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  h2 { font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.06em; color: var(--muted); margin: 18px 0 8px; }
+  .row { display: grid; grid-template-columns: 1fr auto; gap: 6px 10px; align-items: baseline;
+    padding: 10px 10px 12px; border-radius: 12px; margin-bottom: 6px; }
+  .row .name { font-weight: 600; }
+  .row .code { color: var(--muted); font-weight: 400; font-size: 0.85rem; margin-left: 6px; }
+  .row .pct { font-variant-numeric: tabular-nums; font-weight: 700; }
+  .row .bar { grid-column: 1 / -1; height: 10px; border-radius: 6px; background: var(--bar); overflow: hidden; }
+  .row .bar b { display: block; height: 100%; width: 0; background: var(--bar-top); border-radius: 6px; transition: width 0.5s ease; }
+  .row.akiec { background: var(--akiec-bg); outline: 2px solid var(--akiec); }
+  .row.akiec .bar b { background: var(--akiec); }
+  .row.akiec .tag { font-size: 0.7rem; font-weight: 700; color: var(--akiec); text-transform: uppercase;
+    letter-spacing: 0.05em; margin-left: 8px; }
+  .meta { color: var(--muted); font-size: 0.85rem; margin-top: 10px; }
+  .error { background: var(--err-bg); color: var(--err); border-radius: 12px; padding: 12px 14px; margin-top: 14px; font-weight: 600; }
+  footer { margin-top: 22px; padding: 14px; border-radius: 12px; border: 1px dashed var(--line); text-align: center;
+    font-size: 0.85rem; color: var(--muted); }
+  footer strong { color: var(--ink); display: block; font-size: 0.95rem; margin-bottom: 2px; }
+</style>
 </head>
 <body>
-<h1>Skin-lesion demo</h1>
-<p>Placeholder page — the mobile frontend arrives in task 9.</p>
-<p>Research demo — not a diagnostic device.</p>
+<main>
+  <header>
+    <h1>Skin-lesion demo</h1>
+    <p>EfficientNet-B0 trained on HAM10000 · 7 classes · runs on the presenter's laptop</p>
+  </header>
+
+  <section class="card" id="picker">
+    <div class="buttons">
+      <label class="btn primary">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/><circle cx="12" cy="13" r="4"/></svg>
+        Take a photo
+        <input type="file" accept="image/*" capture="environment" id="camera">
+      </label>
+      <label class="btn">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>
+        Choose from gallery
+        <input type="file" accept="image/*" id="gallery">
+      </label>
+    </div>
+    <p class="hint">Dermoscopic images work best. JPEG or PNG, up to 10 MB.</p>
+  </section>
+
+  <section class="card hidden" id="result">
+    <div class="images">
+      <figure><img id="original" alt="Your image"><figcaption>Your image</figcaption></figure>
+      <figure id="heatmap-fig"><img id="heatmap" alt="Grad-CAM overlay"><figcaption>Grad-CAM — where the model looked</figcaption></figure>
+    </div>
+    <div class="spinner hidden" id="spinner"><i></i><span>Analysing on the laptop…</span></div>
+    <div class="error hidden" id="error"></div>
+    <div id="predictions" class="hidden">
+      <h2>Top 3 predictions</h2>
+      <div id="rows"></div>
+      <p class="meta" id="meta"></p>
+    </div>
+    <div class="buttons" style="margin-top:14px">
+      <button class="btn" id="again" type="button">Try another image</button>
+    </div>
+  </section>
+
+  <footer>
+    <strong>Research demo — not a diagnostic device.</strong>
+    Outputs are model probabilities on a research dataset, not medical advice. No image is stored.
+  </footer>
+</main>
+
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var picker = $('picker'), result = $('result'), spinner = $('spinner'), errorBox = $('error');
+  var predictions = $('predictions'), rows = $('rows'), meta = $('meta');
+  var original = $('original'), heatmap = $('heatmap'), heatmapFig = $('heatmap-fig');
+  var FOCUS_CLASS = 'akiec';  // highlighted per the poster's focus (design.md → frontend)
+  var objectUrl = null;
+
+  function reset() {
+    if (objectUrl) { URL.revokeObjectURL(objectUrl); objectUrl = null; }
+    original.removeAttribute('src'); heatmap.removeAttribute('src');
+    rows.innerHTML = ''; meta.textContent = ''; errorBox.textContent = '';
+    predictions.classList.add('hidden'); errorBox.classList.add('hidden'); spinner.classList.add('hidden');
+    heatmapFig.classList.add('hidden'); result.classList.add('hidden'); picker.classList.remove('hidden');
+    $('camera').value = ''; $('gallery').value = '';
+  }
+
+  function showError(message) {
+    spinner.classList.add('hidden');
+    errorBox.textContent = message;
+    errorBox.classList.remove('hidden');
+  }
+
+  function render(data) {
+    heatmap.src = 'data:image/png;base64,' + data.heatmap_png_base64;
+    heatmapFig.classList.remove('hidden');
+    rows.innerHTML = '';
+    data.predictions.forEach(function (p) {
+      var pct = Math.round(p.probability * 1000) / 10;
+      var row = document.createElement('div');
+      row.className = 'row' + (p['class'] === FOCUS_CLASS ? ' akiec' : '');
+      var name = document.createElement('span'); name.className = 'name'; name.textContent = p.label;
+      var code = document.createElement('span'); code.className = 'code'; code.textContent = p['class'];
+      name.appendChild(code);
+      if (p['class'] === FOCUS_CLASS) { var tag = document.createElement('span'); tag.className = 'tag'; tag.textContent = 'focus'; name.appendChild(tag); }
+      var pctEl = document.createElement('span'); pctEl.className = 'pct'; pctEl.textContent = pct.toFixed(1) + '%';
+      var bar = document.createElement('div'); bar.className = 'bar'; var fill = document.createElement('b'); bar.appendChild(fill);
+      row.appendChild(name); row.appendChild(pctEl); row.appendChild(bar);
+      rows.appendChild(row);
+      requestAnimationFrame(function () { fill.style.width = Math.max(2, pct) + '%'; });
+    });
+    meta.textContent = 'Inference ' + data.inference_ms + ' ms on the laptop · Grad-CAM shows the top-1 class';
+    spinner.classList.add('hidden');
+    predictions.classList.remove('hidden');
+  }
+
+  function analyse(file) {
+    if (!file) { return; }
+    reset();
+    objectUrl = URL.createObjectURL(file);
+    original.src = objectUrl;
+    picker.classList.add('hidden'); result.classList.remove('hidden'); spinner.classList.remove('hidden');
+
+    var form = new FormData();
+    form.append('file', file, file.name || 'photo.jpg');
+    fetch('/predict', { method: 'POST', body: form })
+      .then(function (res) {
+        return res.json().catch(function () { return {}; }).then(function (body) {
+          if (!res.ok) { throw new Error(body.detail || ('Server error (' + res.status + ')')); }
+          return body;
+        });
+      })
+      .then(render)
+      .catch(function (err) {
+        var offline = err instanceof TypeError;  // fetch itself failed → no route to the laptop
+        showError(offline ? 'Cannot reach the demo server — are you on the demo Wi-Fi / hotspot?' : err.message);
+      });
+  }
+
+  $('camera').addEventListener('change', function (e) { analyse(e.target.files[0]); });
+  $('gallery').addEventListener('change', function (e) { analyse(e.target.files[0]); });
+  $('again').addEventListener('click', reset);
+})();
+</script>
 </body>
 </html>

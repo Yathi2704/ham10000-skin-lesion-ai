@@ -60,10 +60,10 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
 
 ## Phase C: Frontend + demo tooling
 
-- [ ] 9. Mobile frontend (`app/static/index.html`)
-  - [ ] 9.1 Single-file page: camera capture + gallery upload, local preview, spinner
-  - [ ] 9.2 Result card: overlay image, top-3 probability bars with akiec highlighted, inference time, disclaimer footer
-  - [ ] 9.3 No external CDN or npm — must work with zero internet
+- [x] 9. Mobile frontend (`app/static/index.html`)
+  - [x] 9.1 Single-file page: camera capture + gallery upload, local preview, spinner
+  - [x] 9.2 Result card: overlay image, top-3 probability bars with akiec highlighted, inference time, disclaimer footer
+  - [x] 9.3 No external CDN or npm — must work with zero internet
   - _Requirements: mobile-frontend — 1, 2, 5_
 
 - [ ] 10. Demo tooling
