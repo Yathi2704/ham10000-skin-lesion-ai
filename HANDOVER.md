@@ -4,6 +4,68 @@ Builder → reviewer baton. Updated at every ⛔ checkpoint in `.specs/tasks.md`
 
 ---
 
+## Review closure + real-image smoke run on the M2 — 2026-09-20
+
+**Kimi's verdict: PASS** (`REVIEW.md`, commit `050fa88`). Both Minors closed in `67d4187`; two small
+follow-ups the smoke run itself surfaced: `fe3327f` (metadata-only `load_pool` never opens the zips)
+and the refused-evaluation `mkdir` fix. Test suite: 77 passed + gated tests, `pytest -m "not heavy"`
+for small machines.
+
+### Data on the M2
+
+`data/ham10000/HAM10000_images_part_{1,2}.zip` downloaded from Dataverse (2.7 GB, git-ignored):
+md5 `4639bfa7…` / `da43d6cc…` — both match the Dataverse checksums; `zipfile.testzip()` clean;
+5 000 + 5 015 JPEGs.
+
+### The chain, on the real release (every step is what the Vast.ai run will do)
+
+```
+python data.py --check-images
+  data_dir=data/ham10000  images=10015  lesions=7470  images_verified=True
+  … fingerprint=4b4cc59260945104                         ← matches the pinned value
+
+python train.py --epochs 2 --patience 1 --limit-batches 60          (MPS, smoke only)
+  epoch 1  train_loss 1.8212  val_loss 1.6332  val_macroF1 0.3226  *saved*  73s
+  epoch 2  train_loss 1.4108  val_loss 1.3232  val_macroF1 0.3911  *saved*  71s
+
+python evaluate.py --checkpoint …/model_best.pth                     (all 1 502 test images, 22 s)
+  accuracy 0.5679 · macro-F1 0.3938 · weighted-F1 0.6089 · akiec sensitivity 0.846 / specificity 0.901
+  → metrics.csv (41 rows incl. provenance: checkpoint_file, epoch 2, fingerprint 4b4cc59260945104) + confusion_matrix.png
+
+python train.py --mode full --epochs-from …/model_best.pth --limit-batches 20
+  "full mode: 2 epochs taken from model_best.pth" → model_final.pth
+  trained_on="all", n_train_images=10015, split_fingerprint=None,
+  derived_from={epoch 2, val_macro_f1 0.3911, fingerprint 4b4cc59260945104}
+
+python evaluate.py --checkpoint …/model_final.pth
+  RuntimeError: refusing to evaluate …: trained_on='all' … (exit 1, nothing written)
+```
+
+**These smoke numbers are not poster numbers** — the model saw 3 840 training images for two
+partial epochs. They exist only to prove the zip-reading, split, evaluation and provenance paths
+on the real data. The smoke artifacts live outside the repo and were deleted from `app/` after
+the tests below so they cannot be mistaken for the trained model.
+
+### Gated integration tests, run once with the smoke checkpoints in `app/`
+
+| Test | Result |
+|---|---|
+| 8.1 known test images (akiec / mel / nv, read from the zips) vs `model_final.pth` | pass — true class in top-3 for all three |
+| 8.1 same vs `model_best.pth` | **fails on the akiec image** (`ISIC_0024511` → mel, bcc, bkl): expected for a 2×60-batch model with val macro-F1 0.39; this is the assertion that becomes real with the Vast.ai model |
+| 8.2 bad uploads vs the real server | pass (400 / 400 / 413) |
+| 8.3 latency, 12 MP photo, real checkpoint, MPS | **362–389 ms wall, 303 ms `inference_ms`** |
+| 8.3 architecture budget | 365 ms |
+
+### Timing, for planning the GPU run
+
+108 batches (60 train + 48 val, zip decode + augmentation on the main thread) took ~72 s on the M2
+→ ≈ 0.67 s/batch. A full epoch is 219 train + 48 val batches ≈ 3 min on the M2, so **the whole
+30-epoch split run would take ≤ 1.5 h on this laptop** (early stopping will likely end it sooner) and
+the full-data retrain another ≤ 1 h. On a 4090 with `--num-workers 8` expect a few minutes per run.
+The zips are already on the M2, so a local overnight run is a real alternative to renting.
+
+---
+
 ## ⛔ Checkpoints 2 + 3 — Phase B server, Phase C frontend + tooling — 2026-09-19
 
 **Status:** tasks 5–10 done, one commit each. Built ahead of the Checkpoint 1 review at the user's
