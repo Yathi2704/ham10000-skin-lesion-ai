@@ -66,9 +66,9 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - [x] 9.3 No external CDN or npm — must work with zero internet
   - _Requirements: mobile-frontend — 1, 2, 5_
 
-- [ ] 10. Demo tooling
-  - [ ] 10.1 `make_qr.py` — URL → QR PNG
-  - [ ] 10.2 `run.sh` — uvicorn on 0.0.0.0:8000, prints LAN URL; optional cloudflared quick tunnel, prints public URL
+- [x] 10. Demo tooling
+  - [x] 10.1 `make_qr.py` — URL → QR PNG
+  - [x] 10.2 `run.sh` — uvicorn on 0.0.0.0:8000, prints LAN URL; optional cloudflared quick tunnel, prints public URL
   - _Requirements: mobile-frontend — 3, 4_
 
 **⛔ CHECKPOINT 3 — reviewer + user rehearsal: Mode A (hotspot) and Mode B (tunnel) on the user's phone; laptop sleep/wake behaviour; conference-morning checklist written into HANDOVER.md.**
