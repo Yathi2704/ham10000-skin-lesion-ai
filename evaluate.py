@@ -193,14 +193,17 @@ def run(
         )
 
     loader = data.build_dataloaders(pool, split, batch_size=batch_size, num_workers=num_workers)["test"]
-    print(f"checkpoint={checkpoint}  epoch={meta.get('epoch')}  val_macro_f1={meta.get('val_macro_f1'):.4f}  device={device}")
+    val_f1 = meta.get("val_macro_f1")
+    val_f1_text = f"{val_f1:.4f}" if isinstance(val_f1, (int, float)) else "n/a"
+    print(f"checkpoint={checkpoint}  epoch={meta.get('epoch')}  val_macro_f1={val_f1_text}  device={device}")
     y_true, y_pred, _, _ = predict(model, loader, device)
 
     rows = compute_metrics(y_true, y_pred)
     rows += [  # provenance, so the CSV alone says which model and split produced it
         {"metric": "checkpoint_file", "class": "meta", "value": Path(checkpoint).name},
         {"metric": "checkpoint_epoch", "class": "meta", "value": int(meta.get("epoch", 0))},
-        {"metric": "checkpoint_val_macro_f1", "class": "meta", "value": float(meta.get("val_macro_f1", float("nan")))},
+        {"metric": "checkpoint_val_macro_f1", "class": "meta",
+         "value": float(val_f1) if isinstance(val_f1, (int, float)) else float("nan")},
         {"metric": "split_fingerprint", "class": "meta", "value": fingerprint},
         {"metric": "dataset", "class": "meta", "value": str(meta.get("dataset", ""))},
     ]

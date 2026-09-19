@@ -10,6 +10,7 @@ the real model when it exists.
 import io
 import os
 import time
+import zipfile
 from pathlib import Path
 
 import numpy as np
@@ -26,8 +27,17 @@ MODEL_FILES = {"model_final.pth": REPO / "app" / "model_final.pth", "model_best.
 KNOWN_CLASSES = ("akiec", "mel", "nv")  # the poster's focus class, the dangerous one, the majority one
 
 
-def _have_images() -> bool:
-    return (data.DATA_DIR / data.METADATA_CSV).is_file() and len(data.FileImageStore(data.DATA_DIR)) >= data.HAM10000_N_IMAGES
+def _images_missing_reason() -> str | None:
+    """None when the full release is under data/ham10000, else why not (skip reason)."""
+    if not (data.DATA_DIR / data.METADATA_CSV).is_file():
+        return f"{data.DATA_DIR / data.METADATA_CSV} missing"
+    try:
+        n = len(data.FileImageStore(data.DATA_DIR))
+    except zipfile.BadZipFile as exc:  # a partial download is not a smoke-run failure, just not ready
+        return f"image zip under {data.DATA_DIR} is incomplete or corrupt ({exc})"
+    if n < data.HAM10000_N_IMAGES:
+        return f"{n} of {data.HAM10000_N_IMAGES} images under {data.DATA_DIR} — see data/ham10000/README.md"
+    return None
 
 
 def known_test_images(classes=KNOWN_CLASSES) -> list[tuple[str, str, bytes]]:
@@ -45,14 +55,26 @@ def known_test_images(classes=KNOWN_CLASSES) -> list[tuple[str, str, bytes]]:
 
 
 def phone_photo(size=(4000, 3000)) -> bytes:
-    """A 12 MP JPEG the size a real phone produces (~2–4 MB): smooth skin-like gradient + mild noise."""
+    """A 12 MP JPEG the size a real phone produces (~2–4 MB): smooth skin-like gradient + mild noise.
+
+    Built in float32 with broadcasting (peak ≈ 300 MB); the earlier float64 mgrid version peaked
+    over 1 GB and got the full suite SIGKILLed on a small CI container (REVIEW.md, Minor 1).
+    """
     rng = np.random.default_rng(0)
-    yy, xx = np.mgrid[0 : size[1], 0 : size[0]]
-    base = np.stack([200 + 30 * np.sin(xx / 400), 150 + 30 * np.cos(yy / 300), 140 + 20 * np.sin((xx + yy) / 500)], axis=-1)
-    noise = rng.normal(0, 10, size=(size[1] // 2, size[0] // 2, 3)).repeat(2, axis=0).repeat(2, axis=1)
-    img = Image.fromarray(np.clip(base + noise, 0, 255).astype(np.uint8))
+    w, h = size
+    xx = np.arange(w, dtype=np.float32)[None, :]
+    yy = np.arange(h, dtype=np.float32)[:, None]
+    img = np.empty((h, w, 3), dtype=np.float32)
+    img[..., 0] = 200 + 30 * np.sin(xx / 400)
+    img[..., 1] = 150 + 30 * np.cos(yy / 300)
+    img[..., 2] = 140 + 20 * np.sin((xx + yy) / 500)
+    noise = rng.normal(0, 10, size=(h // 2, w // 2, 3)).astype(np.float32)
+    img += noise.repeat(2, axis=0).repeat(2, axis=1)
+    del noise
+    photo = Image.fromarray(np.clip(img, 0, 255).astype(np.uint8))
+    del img
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=92)
+    photo.save(buf, format="JPEG", quality=92)
     payload = buf.getvalue()
     assert 1_000_000 < len(payload) < server.MAX_UPLOAD_BYTES, len(payload)
     return payload
@@ -68,8 +90,9 @@ def _client_for(model_path: Path):
 
 @pytest.mark.parametrize("model_name", list(MODEL_FILES))
 def test_8_1_known_test_images_expected_class_in_top3(model_name):
-    if not _have_images():
-        pytest.skip("HAM10000 images not under data/ham10000 — see data/ham10000/README.md")
+    reason = _images_missing_reason()
+    if reason:
+        pytest.skip(reason)
     with _client_for(MODEL_FILES[model_name]) as client:
         for image_id, true_class, raw in known_test_images():
             r = client.post("/predict", files={"file": (f"{image_id}.jpg", raw, "image/jpeg")})
@@ -86,6 +109,7 @@ def test_8_2_bad_uploads_against_real_model():
         assert client.post("/predict", files={"file": ("big.jpg", big, "image/jpeg")}).status_code == 413
 
 
+@pytest.mark.heavy
 def test_8_3_latency_under_3s_on_this_machine():
     """Single image through the real demo model, measured end to end on the M2 (MPS if available)."""
     with _client_for(MODEL_FILES["model_final.pth"]) as client:
@@ -102,6 +126,7 @@ def test_8_3_latency_under_3s_on_this_machine():
         assert max(times) < 3.0
 
 
+@pytest.mark.heavy
 def test_8_3_latency_budget_holds_for_the_architecture(tmp_path):
     """Same check with a random-weight checkpoint so the budget is verified before the real model exists."""
     import train

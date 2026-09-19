@@ -147,3 +147,15 @@ def test_run_refuses_the_full_data_demo_model(tmp_path, tiny_pool):
     with pytest.raises(RuntimeError, match="refusing to evaluate"):
         evaluate.run(final, tiny_pool, split, out_dir=tmp_path, device=torch.device("cpu"), batch_size=8)
     assert not (tmp_path / "metrics.csv").exists()  # nothing written for a refused model
+
+
+def test_run_tolerates_checkpoint_without_val_macro_f1(tmp_path, tiny_pool):
+    """REVIEW.md Minor 2: a hand-rolled split checkpoint lacking val_macro_f1 must not TypeError in the report."""
+    split = data.make_split(tiny_pool.labels, tiny_pool.lesion_ids)
+    ckpt = tmp_path / "model_best.pth"
+    train.save_checkpoint(ckpt, train.build_model(pretrained=False), trained_on="train", epoch=1,
+                          split_fingerprint=data.split_fingerprint(split, tiny_pool.image_ids))
+    rows = evaluate.run(ckpt, tiny_pool, split, out_dir=tmp_path, device=torch.device("cpu"), batch_size=8)
+    by = {(r["metric"], r["class"]): r["value"] for r in rows}
+    assert np.isnan(by[("checkpoint_val_macro_f1", "meta")])
+    assert (tmp_path / "metrics.csv").is_file()
