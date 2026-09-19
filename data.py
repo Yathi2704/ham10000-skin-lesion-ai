@@ -165,8 +165,13 @@ def load_pool(dataset_name: str = DATASET_NAME) -> Any:
         raw_col = "label"
         def to_canonical(v: Any) -> int:
             return CLASS_TO_INDEX[source_names[int(v)]]
-    elif "dx" in pool.features:  # HAM10000 metadata-style column
+    elif "dx" in pool.features:  # HAM10000 metadata-style column with the short codes
         raw_col = "dx"
+        unknown = sorted(set(map(str, pool["dx"])) - set(CLASS_NAMES))
+        if unknown:
+            raise ValueError(
+                f"{dataset_name}: 'dx' values {unknown} are not the canonical codes {list(CLASS_NAMES)}"
+            )
         def to_canonical(v: Any) -> int:
             return CLASS_TO_INDEX[str(v)]
     else:
