@@ -14,9 +14,9 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - [x] 2.3 Unit test: same seed → identical split; class counts sum correctly
   - _Requirements: model-training — 1, 2, 3_
 
-- [ ] 3. Implement `train.py`
-  - [ ] 3.1 EfficientNet-B0 with 7-class head, class-weighted CrossEntropyLoss, Adam lr=1e-4
-  - [ ] 3.2 Training loop with validation macro-F1 each epoch, early stopping, save best as `model_best.pth` (state_dict + label map)
+- [x] 3. Implement `train.py`
+  - [x] 3.1 EfficientNet-B0 with 7-class head, class-weighted CrossEntropyLoss, Adam lr=1e-4
+  - [x] 3.2 Training loop with validation macro-F1 each epoch, early stopping, save best as `model_best.pth` (state_dict + label map)
   - _Requirements: model-training — 4, 5_
 
 - [ ] 4. Implement `evaluate.py`
