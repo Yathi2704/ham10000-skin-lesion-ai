@@ -8,10 +8,10 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - Create repo layout per design.md, `requirements.txt` (torch, torchvision, datasets, fastapi, uvicorn, pytorch-grad-cam, pillow, numpy, scikit-learn, matplotlib, seaborn, qrcode, python-multipart)
   - _Requirements: model-training — all_
 
-- [ ] 2. Implement `data.py` — canonical split
-  - [ ] 2.1 Load HAM10000, build stratified 70/15/15 split (seed 42), print per-class counts per partition
-  - [ ] 2.2 DataLoaders with ImageNet normalization (resize 224, batch 32)
-  - [ ] 2.3 Unit test: same seed → identical split; class counts sum correctly
+- [x] 2. Implement `data.py` — canonical split
+  - [x] 2.1 Load HAM10000, build stratified 70/15/15 split (seed 42), print per-class counts per partition
+  - [x] 2.2 DataLoaders with ImageNet normalization (resize 224, batch 32)
+  - [x] 2.3 Unit test: same seed → identical split; class counts sum correctly
   - _Requirements: model-training — 1, 2, 3_
 
 - [ ] 3. Implement `train.py`
