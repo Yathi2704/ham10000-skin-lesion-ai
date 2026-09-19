@@ -5,6 +5,7 @@ validation, in-memory handling and Grad-CAM path without the trained model. Test
 `needs_model` use the real demo artifact and are skipped until it exists.
 """
 
+import base64
 import io
 import os
 from pathlib import Path
@@ -113,7 +114,7 @@ def _png(size=(300, 200)) -> bytes:
 
 
 def _assert_contract(body: dict):
-    assert set(body) >= {"predictions", "inference_ms"}
+    assert set(body) == {"predictions", "heatmap_png_base64", "inference_ms"}  # exact contract (design.md)
     preds = body["predictions"]
     assert len(preds) == 3
     for p in preds:
@@ -124,6 +125,10 @@ def _assert_contract(body: dict):
     assert probs == sorted(probs, reverse=True) and sum(probs) <= 1.0 + 1e-3
     assert len({p["class"] for p in preds}) == 3
     assert isinstance(body["inference_ms"], int) and body["inference_ms"] >= 0
+    png = base64.b64decode(body["heatmap_png_base64"], validate=True)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    overlay = Image.open(io.BytesIO(png))
+    assert overlay.mode == "RGB" and max(overlay.size) <= 512
 
 
 def test_predict_multipart_jpeg_matches_contract(client):
@@ -247,3 +252,47 @@ def test_read_body_capped_streams_and_stops_without_content_length():
             yield b"def"
 
     assert asyncio.run(server.read_body_capped(SmallRequest())) == b"abcdef"
+
+
+# -------------------------------------------------------------- Grad-CAM --
+def test_gradcam_heatmap_shape_range_and_target_layer():
+    from app.gradcam import HeatmapGenerator
+
+    model = train.build_model(pretrained=False).eval()
+    gen = HeatmapGenerator(model)
+    assert gen.cam.target_layers == [model.features[-1]]
+    x = torch.randn(1, 3, data.IMAGE_SIZE, data.IMAGE_SIZE)
+    cam = gen.heatmap(x, class_index=0)
+    assert cam.shape == (data.IMAGE_SIZE, data.IMAGE_SIZE) and cam.dtype == np.float32
+    assert float(cam.min()) >= 0.0 and float(cam.max()) <= 1.0 + 1e-6
+    with pytest.raises(ValueError):
+        gen.heatmap(torch.randn(2, 3, data.IMAGE_SIZE, data.IMAGE_SIZE), 0)
+
+
+def test_gradcam_overlay_keeps_aspect_and_caps_size():
+    from app.gradcam import HeatmapGenerator
+
+    gen = HeatmapGenerator(train.build_model(pretrained=False).eval())
+    original = Image.fromarray(np.random.default_rng(3).integers(0, 256, size=(3000, 4000, 3), dtype=np.uint8))
+    x = data.get_transform()(original).unsqueeze(0)
+    png = gen.overlay_png(x, 4, original)
+    img = Image.open(io.BytesIO(png))
+    assert img.format == "PNG" and img.size == (512, 384)
+    small = Image.fromarray(np.random.default_rng(4).integers(0, 256, size=(100, 150, 3), dtype=np.uint8))
+    assert Image.open(io.BytesIO(gen.overlay_png(data.get_transform()(small).unsqueeze(0), 1, small))).size == (150, 100)
+
+
+def test_heatmap_is_for_the_top1_class(client, fake_checkpoint):
+    """The overlay in the response is the Grad-CAM of predictions[0]."""
+    from app.gradcam import HeatmapGenerator
+
+    raw = _jpeg(seed=11)
+    body = client.post("/predict", files={"file": ("a.jpg", raw, "image/jpeg")}).json()
+    served = base64.b64decode(body["heatmap_png_base64"])
+
+    model, meta = server.load_model(fake_checkpoint, torch.device("cpu"))
+    original = Image.open(io.BytesIO(raw)).convert("RGB")
+    x = server.build_transform(meta)(original).unsqueeze(0)
+    top1 = data.CLASS_NAMES.index(body["predictions"][0]["class"])
+    expected = HeatmapGenerator(model).overlay_png(x, top1, original)
+    assert np.array_equal(np.asarray(Image.open(io.BytesIO(served))), np.asarray(Image.open(io.BytesIO(expected))))

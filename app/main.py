@@ -9,7 +9,7 @@ only; nothing from the training code.
 
 Routes:  GET /          the single-file mobile frontend (app/static/index.html)
          GET /health    model + device info (no metrics — numbers live in metrics.csv)
-         POST /predict  JPEG/PNG upload (raw body or multipart field "file") → top-3 + inference_ms
+         POST /predict  JPEG/PNG upload (raw body or multipart field "file") → top-3 + Grad-CAM overlay
 
 Uploads never touch disk: the body is read into memory (capped at 10 MB) and multipart is
 parsed in memory too — Starlette's own UploadFile would spool anything over 1 MB to a temp file.
@@ -37,6 +37,8 @@ from python_multipart import MultipartParser
 from torch import nn
 from torchvision import transforms
 from torchvision.models import efficientnet_b0
+
+from .gradcam import HeatmapGenerator, png_to_base64
 
 log = logging.getLogger("skin-demo")
 
@@ -138,10 +140,13 @@ class Predictor:
         self.device = device
         self.model, self.meta = load_model(self.model_path, device)
         self.transform = build_transform(self.meta)
+        self.heatmaps = HeatmapGenerator(self.model)
         self.lock = threading.Lock()  # one image at a time through the model + Grad-CAM hooks
         size = int(self.meta["image_size"])
+        warm = torch.zeros(1, 3, size, size, device=device)
         with torch.no_grad():  # warm-up so the first phone request doesn't pay for kernel compilation
-            self.model(torch.zeros(1, 3, size, size, device=device))
+            self.model(warm)
+        self.heatmaps.heatmap(warm, 0)
 
     def info(self) -> dict[str, Any]:
         return {
@@ -156,13 +161,18 @@ class Predictor:
 
 
     def predict(self, image: Image.Image) -> dict[str, Any]:
-        """One RGB PIL image → the /predict JSON body (design.md → API contract)."""
+        """One RGB PIL image → the /predict JSON body (design.md → API contract).
+
+        `inference_ms` covers preprocessing, the forward pass and the Grad-CAM overlay
+        (not the upload). The heatmap is for the top-1 class.
+        """
         t0 = time.perf_counter()
         x = self.transform(image).unsqueeze(0).to(self.device)
         with self.lock:
             with torch.no_grad():
                 probs = torch.softmax(self.model(x), dim=1)[0]
             top = torch.topk(probs, k=TOP_K)
+            png = self.heatmaps.overlay_png(x, int(top.indices[0]), image)
         predictions = [
             {
                 "class": CLASS_NAMES[int(i)],
@@ -171,7 +181,11 @@ class Predictor:
             }
             for p, i in zip(top.values.tolist(), top.indices.tolist())
         ]
-        return {"predictions": predictions, "inference_ms": int(round((time.perf_counter() - t0) * 1000))}
+        return {
+            "predictions": predictions,
+            "heatmap_png_base64": png_to_base64(png),
+            "inference_ms": int(round((time.perf_counter() - t0) * 1000)),
+        }
 
 
 # --------------------------------------------------------------------------- #

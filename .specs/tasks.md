@@ -46,8 +46,8 @@ Execution rules for the builder: read ALL files in `.specs/` before starting; ON
   - [x] 6.2 Preprocess → infer → return top-3 predictions + inference_ms per the JSON contract; fully in-memory
   - _Requirements: inference-server — 1, 4, 5, 6_
 
-- [ ] 7. Grad-CAM module (`app/gradcam.py`)
-  - [ ] 7.1 Grad-CAM on `model.features[-1]`, overlay on original image, return base64 PNG in the response
+- [x] 7. Grad-CAM module (`app/gradcam.py`)
+  - [x] 7.1 Grad-CAM on `model.features[-1]`, overlay on original image, return base64 PNG in the response
   - _Requirements: inference-server — 1, 6_
 
 - [ ] 8. Integration tests
