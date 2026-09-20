@@ -15,3 +15,6 @@ data/ham10000/**/*.jpeg
 # local scratch / OS
 .DS_Store
 *.log
+
+# the training run log is a provenance artifact (exception to *.log)
+!app/vast_run.log
