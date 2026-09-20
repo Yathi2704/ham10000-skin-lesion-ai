@@ -4,6 +4,69 @@ Builder → reviewer baton. Updated at every ⛔ checkpoint in `.specs/tasks.md`
 
 ---
 
+## The real run — Vast.ai, 2026-09-20 (artifacts committed in `82bacb3`)
+
+RTX 4090 · torch 2.11.0+cu128 · code `0d1a108` · 14 min of GPU time end to end · full log in
+`app/vast_run.log`. Everything below is copied from the artifacts, not typed in.
+
+```
+data.py --check-images   → images=10015 lesions=7470 images_verified=True  fingerprint=4b4cc59260945104
+train.py (split)         → 27 epochs, early stop (patience 5), best val macro-F1 0.7273 @ epoch 22, ~13 s/epoch
+evaluate.py              → app/metrics.csv + app/confusion_matrix.png   (1 502 test images, 1 121 unseen lesions)
+train.py --mode full     → 22 epochs on 10 015 images → app/model_final.pth (derived_from: epoch 22, 0.7273, 4b4cc5…)
+evaluate.py model_final  → refused: trained_on='all'
+```
+
+### Held-out test metrics (`app/metrics.csv`, computed by `evaluate.py` from `model_best.pth`)
+
+| class | precision | recall | F1 | support |
+|---|---|---|---|---|
+| akiec | 0.644 | 0.731 | 0.685 | 52 |
+| bcc | 0.607 | 0.761 | 0.675 | 71 |
+| bkl | 0.699 | 0.653 | 0.675 | 167 |
+| df | 0.389 | 0.700 | 0.500 | 20 |
+| mel | 0.565 | 0.575 | 0.570 | 167 |
+| nv | 0.912 | 0.881 | 0.897 | 1004 |
+| vasc | 0.682 | 0.714 | 0.698 | 21 |
+| macro avg | 0.642 | 0.716 | 0.671 | |
+| weighted avg | 0.816 | 0.806 | 0.810 | |
+
+**accuracy 0.806** · **akiec sensitivity 0.731** (38 / 52) · **akiec specificity 0.986** (1429 / 1450, 21 false
+positives) · confusion matrix: `app/confusion_matrix.png`.
+
+Reading it honestly: the split is lesion-grouped, so these are numbers on *lesions the model never saw*.
+The class weighting bought recall on the rare classes (df 0.70, vasc 0.71, akiec 0.73) at the price of
+precision on df (20 images — one error = 5 points). The largest confusion is mel ↔ nv (48 + 55), the
+classic HAM10000 failure mode; akiec's 14 misses go mostly to bcc/bkl/df, not to nv.
+
+### Files in `app/` now
+
+| file | what | versioned |
+|---|---|---|
+| `model_best.pth` | split-run model, epoch 22 — the one `metrics.csv` is about | no (`*.pth`), md5 `3ed5da78…` |
+| `model_final.pth` | 100 %-data model — what `run.sh` serves | no (`*.pth`), md5 `72a89f4b…` |
+| `metrics.csv`, `confusion_matrix.png` | the poster's numbers | yes |
+| `train_log.csv`, `train_log_full.csv`, `vast_run.log` | per-epoch curves + the full console log | yes |
+
+Both `.pth` files also exist on the Vast instance until it is destroyed; keep a copy of the two md5s above
+with the poster material so any future copy can be checked.
+
+### Test suite with the artifacts in place
+
+`pytest -q` → **79 passed, 0 skipped**. The four previously gated tests are real now: the first test-partition
+akiec / mel / nv images each land their true class in the top-3 for *both* models; bad uploads 400/400/413
+against the real server; a 12 MP photo through `model_final.pth` on MPS in **368–372 ms wall / 302 ms
+`inference_ms`**.
+
+### What's left
+
+1. Destroy the Vast instance (user action; nothing on it is needed any more).
+2. Phone rehearsal — Mode A + Mode B — per the conference-morning checklist below (Checkpoint 3).
+3. Optional, if the poster wants it: a row-normalised confusion matrix (recall per class) reads better
+   than raw counts when nv dominates the colour scale; one flag in `evaluate.py` if asked.
+
+---
+
 ## Review closure + real-image smoke run on the M2 — 2026-09-20
 
 **Kimi's verdict: PASS** (`REVIEW.md`, commit `050fa88`). Both Minors closed in `67d4187`; two small
