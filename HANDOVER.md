@@ -203,6 +203,30 @@ focus tag and 61 / 22 / 9 % bars. Console clean apart from the intentional 400. 
 - **Not in the spec but present:** `GET /health`, `HEAD /`, `tests/test_tooling.py`, the 512 px cap on
   the overlay, EXIF orientation handling. All small; say the word if any should go.
 
+### What to say at the board (poster P2071 is frozen; the demo is the update)
+
+The poster's numbers (CNN 70.0 % accuracy, RF 49.3 %, XGB 47.1 %, SVM 45.0 %) are from the
+700-image Hugging Face subset, 140 test images, as submitted. The phone runs a different, stronger
+experiment. One honest sentence covers the gap:
+
+> "Since submission we retrained the same EfficientNet-B0 on the complete 10 015-image HAM10000
+> release with a lesion-level split — on 1 502 held-out images from lesions the model never saw it
+> reaches 80.6 % accuracy, 73 % actinic-keratosis sensitivity and 99 % specificity. That's the model
+> you're talking to on your phone."
+
+Likely questions → answers that trace to an artifact:
+- *Cross-validation?* — "Single stratified, lesion-grouped 70/15/15 split, seed 42; the split is
+  fingerprinted (`4b4cc59260945104`) and regenerable from the metadata CSV." (Neither poster nor demo
+  used CV.)
+- *Hardest class?* — "Melanoma vs nevus, 48 + 55 confusions — the textbook HAM10000 failure. AK's
+  misses go to BCC/BKL/DF, so the poster's AK–BCC overlap point still holds."
+- *Why not the demo numbers on the poster?* — "Submission deadline; the retrain finished after. Both
+  models are the same architecture; the demo one saw 14× more data and a leak-free split."
+- *Is the served model the evaluated one?* — "No, and on purpose: metrics come from `model_best.pth`
+  on held-out data; the phone serves `model_final.pth`, retrained on 100 % for the same 22 epochs.
+  The evaluator refuses to score the served model, so the two can't be confused."
+- *Diagnostic?* — "Research demo, not a device — it's on the screen and in the disclaimer."
+
 ### Conference-morning checklist (rehearsal target for Checkpoint 3)
 
 The night before
