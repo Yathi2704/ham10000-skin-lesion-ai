@@ -30,3 +30,8 @@ You are the BUILDER on a spec-driven project. A separate agent reviews your work
 ## When blocked
 
 - Document the blocker, reference the spec section, propose alternatives, and ask the user. Do not improvise scope changes.
+
+## Session start
+
+New session? Read `NEXT_SESSION.md` first, then the latest section of `HANDOVER.md` and `REVIEW.md`.
+Open the session in `/Users/yathish/skin`, not a sibling folder.
