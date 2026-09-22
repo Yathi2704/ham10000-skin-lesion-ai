@@ -1,6 +1,6 @@
 # Explainable AI for Actinic Keratosis and Malignant Skin Lesion Classification
 
-Code and results behind **e-poster P2699**, *"Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions using a Deep Learning Approach"* — EADV Congress 2026, Vienna.
+Code and results behind **e-poster P2071**, *"Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions using a Deep Learning Approach"* — EADV Congress 2026, Vienna.
 
 Fellisha Marwein and Yathish Balachander · NIHR Clinical Research Facility, Liverpool University Hospitals NHS Foundation Trust.
 
@@ -90,7 +90,7 @@ The notebook sets seeds (42) and saves the trained weights as `efficientnet_b0_h
 
 ## Citation
 
-> Marwein F, Balachander Y. *Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions using a Deep Learning Approach.* E-poster P2699, EADV Congress 2026, Vienna.
+> Marwein F, Balachander Y. *Explainable AI-assisted Classification of Actinic Keratosis and Malignant Skin Lesions using a Deep Learning Approach.* E-poster P2071, EADV Congress 2026, Vienna.
 
 Dataset: Tschandl P, Rosendahl C, Kittler H. *The HAM10000 dataset, a large collection of multi-source dermatoscopic images of common pigmented skin lesions.* Scientific Data 5, 180161 (2018).
 

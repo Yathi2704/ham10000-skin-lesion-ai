@@ -77,7 +77,9 @@ cd /Users/yathish/skin
 
 ## 7. Open decisions for the user
 
-1. Poster number: the file says **P2071**, the GitHub description/old README say **P2699**.
+1. ~~Poster number~~ — **resolved 2026-09-22: P2071** (user confirmed against
+   `~/Documents/AI_skinLesions_v2.pptx`, "E-Poster No. P2071"). `poster/README.md` fixed; the GitHub
+   repo description still says P2699 — user edits it on GitHub (About → ⚙; `gh` is not installed).
 2. Licence for the public repo (none yet; MIT suggested).
 3. Keep or drop the `Co-Authored-By` trailer on future commits.
 4. Destroy the Vast instance if not already done.
